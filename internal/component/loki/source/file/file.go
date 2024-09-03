@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	parser "github.com/coroot/logparser"
 	"github.com/grafana/alloy/internal/component"
 	"github.com/grafana/alloy/internal/component/common/loki"
 	"github.com/grafana/alloy/internal/component/common/loki/positions"
@@ -17,6 +18,8 @@ import (
 	"github.com/grafana/alloy/internal/runtime/logging/level"
 	"github.com/grafana/tail/watch"
 	"github.com/prometheus/common/model"
+	"go.opentelemetry.io/otel/attribute"
+	api "go.opentelemetry.io/otel/metric"
 )
 
 func init() {
@@ -86,7 +89,12 @@ type Component struct {
 	receivers []loki.LogsReceiver
 	posFile   positions.Positions
 	readers   map[positions.Entry]reader
+
+	lastLogInfo sync.Map
 }
+
+var promSDK *OTLPSDK
+var sdkInitOnce sync.Once
 
 // New creates a new loki.source.file component.
 func New(o component.Options, args Arguments) (*Component, error) {
@@ -118,6 +126,9 @@ func New(o component.Options, args Arguments) (*Component, error) {
 		posFile:   positionsFile,
 		readers:   make(map[positions.Entry]reader),
 	}
+	sdkInitOnce.Do(func() {
+		promSDK = InitMeter(":9499")
+	})
 
 	// Call to Update() to start readers and set receivers once at the start.
 	if err := c.Update(args); err != nil {
@@ -148,6 +159,7 @@ func (c *Component) Run(ctx context.Context) error {
 		case <-ctx.Done():
 			return nil
 		case entry := <-c.handler.Chan():
+			c.GetPromMetric(entry)
 			c.mut.RLock()
 			for _, receiver := range c.receivers {
 				receiver.Chan() <- entry
@@ -384,4 +396,137 @@ func (c *Component) reportSize(path, labels string) {
 		}
 		c.metrics.totalBytes.WithLabelValues(path).Set(float64(fi.Size()))
 	}
+}
+
+func (c *Component) GetPromMetric(entry loki.Entry) {
+	content := entry.Entry.Line
+	var svcTag = &ServiceTag{}
+	svcTag.FillTag(entry.Labels)
+	if parser.IsFirstLine(content) {
+		lastLogInfo := c.GetLastLogInfo(svcTag)
+		if lastLogInfo != nil {
+			lastLogInfo = &LastLogInfo{
+				isLastNewLine:                true,
+				isFirstLineContainsTimestamp: parser.IsContainsTimestamp(content),
+				pythonTraceback:              false,
+				pythonTracebackExpected:      false,
+				TimestampSecond:              entry.Entry.Timestamp.Unix(),
+			}
+			c.UpdateLogInfo(svcTag, lastLogInfo)
+		}
+		lastLogInfo.TimestampSecond = entry.Entry.Timestamp.Unix()
+		if lastLogInfo.IsFirstLine(content) {
+			lastLogInfo.isLastNewLine = true
+			logLevel, exceptionType := parser.GuessLevelAndException(content)
+			c.CounterInc(svcTag, logLevel, exceptionType)
+		} else {
+			lastLogInfo.isLastNewLine = false
+		}
+	}
+}
+
+func (c *Component) CounterInc(serviceTag *ServiceTag, logLevel parser.Level, exceptionType string) {
+	promSDK.levelCounter.Add(context.Background(), 1, serviceTag.WithLogLevel(logLevel))
+	if len(exceptionType) > 0 {
+		promSDK.exceptionCounter.Add(context.Background(), 1, serviceTag.WithExceptionType(exceptionType))
+	}
+}
+
+func (c *Component) GetLastLogInfo(serviceTag *ServiceTag) *LastLogInfo {
+	ref, ok := c.lastLogInfo.Load(*serviceTag)
+	if !ok {
+		return nil
+	}
+	return ref.(*LastLogInfo)
+}
+
+func (c *Component) UpdateLogInfo(serviceTag *ServiceTag, info *LastLogInfo) {
+	c.lastLogInfo.Store(*serviceTag, info)
+}
+
+func (c *Component) CleanupExpiredInfo() {
+	ticker := time.NewTicker(5 * time.Minute)
+	for {
+		select {
+		case <-ticker.C:
+			now := time.Now().Unix()
+			c.lastLogInfo.Range(func(key, value interface{}) bool {
+				serviceTag := key.(ServiceTag)
+				lastLogInfo := value.(*LastLogInfo)
+				if lastLogInfo.TimestampSecond+30 < now {
+					c.lastLogInfo.Delete(serviceTag)
+				}
+				return true
+			})
+		}
+	}
+}
+
+type LastLogInfo struct {
+	isLastNewLine                bool
+	isFirstLineContainsTimestamp bool
+
+	pythonTraceback         bool
+	pythonTracebackExpected bool
+
+	// 上次日志的时间戳
+	TimestampSecond int64
+}
+
+type ServiceTag struct {
+	ServiceName string
+	FileName    string
+}
+
+func (s *ServiceTag) FillTag(labels model.LabelSet) {
+	for key, value := range labels {
+		switch key {
+		case "app_name":
+			s.ServiceName = string(value)
+		case "filename":
+			s.FileName = string(value)
+		}
+	}
+}
+func (s *ServiceTag) WithLogLevel(level parser.Level) api.MeasurementOption {
+	// 非容器环境使用pid
+	return api.WithAttributeSet(attribute.NewSet(
+		attribute.Key("level").String(level.String()),
+		attribute.Key("service_name").String(s.ServiceName),
+		attribute.Key("filename").String(s.FileName),
+	))
+}
+
+func (s *ServiceTag) WithExceptionType(exceptionType string) api.MeasurementOption {
+	return api.WithAttributeSet(attribute.NewSet(
+		attribute.Key("exception").String(exceptionType),
+		attribute.Key("service_name").String(s.ServiceName),
+		attribute.Key("filename").String(s.FileName),
+	))
+}
+
+func (l *LastLogInfo) IsFirstLine(content string) bool {
+	if l.isFirstLineContainsTimestamp {
+		return parser.IsContainsTimestamp(content)
+	}
+
+	if strings.HasPrefix(content, "Traceback ") {
+		l.pythonTraceback = true
+		if l.pythonTracebackExpected {
+			l.pythonTracebackExpected = false
+			return false
+		}
+		return !l.isLastNewLine
+	}
+	if content == "The above exception was the direct cause of the following exception:" ||
+		content == "During handling of the above exception, another exception occurred:" {
+		l.pythonTracebackExpected = true
+		return false
+	}
+	if l.pythonTraceback {
+		l.pythonTraceback = false
+		return false
+	}
+
+	return true
 }

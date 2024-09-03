@@ -252,6 +252,8 @@ require (
 	sigs.k8s.io/yaml v1.4.0
 )
 
+require github.com/coroot/logparser v0.0.0-00010101000000-000000000000
+
 require (
 	cloud.google.com/go v0.112.2 // indirect
 	cloud.google.com/go/auth v0.4.1 // indirect
@@ -755,6 +757,7 @@ replace (
 
 // TODO(rfratto): remove forks when changes are merged upstream
 replace (
+	github.com/coroot/logparser => ./internal/component/loki/source/file/logparser
 	// TODO(tpaschalis) this is to remove global instantiation of plugins
 	// and allow non-singleton components.
 	// https://github.com/grafana/cadvisor/tree/grafana-v0.47-noglobals
