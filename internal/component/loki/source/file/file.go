@@ -91,6 +91,7 @@ type Component struct {
 	readers   map[positions.Entry]reader
 
 	lastLogInfo sync.Map
+	stopch      chan struct{}
 }
 
 var promSDK *OTLPSDK
@@ -125,9 +126,10 @@ func New(o component.Options, args Arguments) (*Component, error) {
 		receivers: args.ForwardTo,
 		posFile:   positionsFile,
 		readers:   make(map[positions.Entry]reader),
+		stopch:    make(chan struct{}),
 	}
 	sdkInitOnce.Do(func() {
-		promSDK = InitMeter(":9499")
+		promSDK = InitMeter(o.Logger, ":9499")
 	})
 
 	// Call to Update() to start readers and set receivers once at the start.
@@ -152,6 +154,7 @@ func (c *Component) Run(ctx context.Context) error {
 		c.posFile.Stop()
 		close(c.handler.Chan())
 		c.mut.RUnlock()
+		c.stopch <- struct{}{}
 	}()
 
 	for {
@@ -404,7 +407,7 @@ func (c *Component) GetPromMetric(entry loki.Entry) {
 	svcTag.FillTag(entry.Labels)
 	if parser.IsFirstLine(content) {
 		lastLogInfo := c.GetLastLogInfo(svcTag)
-		if lastLogInfo != nil {
+		if lastLogInfo == nil {
 			lastLogInfo = &LastLogInfo{
 				isLastNewLine:                true,
 				isFirstLineContainsTimestamp: parser.IsContainsTimestamp(content),
@@ -415,6 +418,7 @@ func (c *Component) GetPromMetric(entry loki.Entry) {
 			c.UpdateLogInfo(svcTag, lastLogInfo)
 		}
 		lastLogInfo.TimestampSecond = entry.Entry.Timestamp.Unix()
+
 		if lastLogInfo.IsFirstLine(content) {
 			lastLogInfo.isLastNewLine = true
 			logLevel, exceptionType := parser.GuessLevelAndException(content)
@@ -448,6 +452,9 @@ func (c *Component) CleanupExpiredInfo() {
 	ticker := time.NewTicker(5 * time.Minute)
 	for {
 		select {
+		case <-c.stopch:
+			ticker.Stop()
+			return
 		case <-ticker.C:
 			now := time.Now().Unix()
 			c.lastLogInfo.Range(func(key, value interface{}) bool {
@@ -489,7 +496,6 @@ func (s *ServiceTag) FillTag(labels model.LabelSet) {
 	}
 }
 func (s *ServiceTag) WithLogLevel(level parser.Level) api.MeasurementOption {
-	// 非容器环境使用pid
 	return api.WithAttributeSet(attribute.NewSet(
 		attribute.Key("level").String(level.String()),
 		attribute.Key("service_name").String(s.ServiceName),

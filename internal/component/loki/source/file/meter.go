@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"os"
 
+	"github.com/go-kit/log"
+	"github.com/grafana/alloy/internal/runtime/logging/level"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.opentelemetry.io/otel/exporters/prometheus"
 	api "go.opentelemetry.io/otel/metric"
@@ -26,7 +28,7 @@ type OTLPSDK struct {
 
 const meterName = "github.com/CloudDetail/apo-alloy"
 
-func InitMeter(address string) *OTLPSDK {
+func InitMeter(log log.Logger, address string) *OTLPSDK {
 	sdk := &OTLPSDK{
 		srvMux:        http.NewServeMux(),
 		listenAddress: address,
@@ -34,11 +36,7 @@ func InitMeter(address string) *OTLPSDK {
 
 	exporter, err := prometheus.New()
 	if err != nil {
-		// logger.Error(
-		// 	context.GetRuntimeContext(),
-		// 	"PROM_EXPORTER_ERROR",
-		// 	"err", err.Error(),
-		// )
+		level.Error(log).Log("msg", "PROM_EXPORTER_ERROR", "err", err.Error())
 	}
 
 	hostname, find := os.LookupEnv("_node_name_")
@@ -53,11 +51,7 @@ func InitMeter(address string) *OTLPSDK {
 		),
 	)
 	if err != nil {
-		// logger.Error(
-		// 	context.GetRuntimeContext(),
-		// 	"PROM_EXPORTER_ERROR",
-		// 	"err", err.Error(),
-		// )
+		level.Error(log).Log("msg", "PROM_EXPORTER_ERROR", "err", err.Error())
 	}
 	provider := metric.NewMeterProvider(metric.WithReader(exporter), metric.WithResource(res))
 	sdk.meter = provider.Meter(meterName)
@@ -70,18 +64,15 @@ func InitMeter(address string) *OTLPSDK {
 		"originx_logparser_exception_count",
 		api.WithDescription("log exception counter"))
 
-	// logger.Info(
-	// 	context.GetRuntimeContext(),
-	// 	"PROM_EXPORTER_INIT",
-	// 	"addr", "serving metrics at"+address)
+	level.Info(log).Log("msg", "PROM_EXPORTER_INIT", "addr", "serving metrics at "+address)
 
 	sdk.srvMux.Handle("/metrics", promhttp.Handler())
-	setUpHTTPServer(sdk.srvMux, address)
+	setUpHTTPServer(log, sdk.srvMux, address)
 
 	return sdk
 }
 
-func setUpHTTPServer(handler http.Handler, listenAddr string) (*http.Server, error) {
+func setUpHTTPServer(log log.Logger, handler http.Handler, listenAddr string) (*http.Server, error) {
 	listener, err := net.Listen("tcp", listenAddr)
 	if err != nil {
 		return nil, err
@@ -91,10 +82,7 @@ func setUpHTTPServer(handler http.Handler, listenAddr string) (*http.Server, err
 	go func() {
 		err := server.Serve(listener)
 		if err != nil && err != http.ErrServerClosed {
-			// logger.Error(
-			// 	context.Background(),
-			// 	"PROM_EXPORTER_ERROR",
-			// 	"prometheus exporter err:", err.Error())
+			level.Error(log).Log("msg", "PROM_EXPORTER_ERROR", "err", err.Error())
 		}
 		listener.Close()
 	}()
