@@ -131,6 +131,7 @@ func New(o component.Options, args Arguments) (*Component, error) {
 	sdkInitOnce.Do(func() {
 		promSDK = InitMeter(o.Logger, ":9499")
 	})
+	go c.CleanupExpiredInfo()
 
 	// Call to Update() to start readers and set receivers once at the start.
 	if err := c.Update(args); err != nil {
@@ -512,9 +513,9 @@ func (s *ServiceTag) WithExceptionType(exceptionType string) api.MeasurementOpti
 }
 
 func (l *LastLogInfo) IsFirstLine(content string) bool {
-	if l.isFirstLineContainsTimestamp {
-		return parser.IsContainsTimestamp(content)
-	}
+	// if l.isFirstLineContainsTimestamp {
+	// 	return parser.IsContainsTimestamp(content)
+	// }
 
 	if strings.HasPrefix(content, "Traceback ") {
 		l.pythonTraceback = true

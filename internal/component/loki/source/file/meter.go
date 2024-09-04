@@ -39,11 +39,11 @@ func InitMeter(log log.Logger, address string) *OTLPSDK {
 		level.Error(log).Log("msg", "PROM_EXPORTER_ERROR", "err", err.Error())
 	}
 
-	hostname, find := os.LookupEnv("_node_name_")
+	hostname, find := os.LookupEnv("COMPUTERNAME")
 	if !find {
 		hostname, _ = os.Hostname()
 	}
-	hostIP := os.Getenv("_node_ip_")
+	hostIP := os.Getenv("MY_NODE_IP")
 	res, err := resource.New(context.Background(),
 		resource.WithAttributes(
 			semconv.HostIPKey.String(hostIP),
