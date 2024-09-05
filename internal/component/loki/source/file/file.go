@@ -94,8 +94,8 @@ type Component struct {
 	stopch      chan struct{}
 }
 
-var promSDK *OTLPSDK
-var sdkInitOnce sync.Once
+var node_name string
+var node_ip string
 
 // New creates a new loki.source.file component.
 func New(o component.Options, args Arguments) (*Component, error) {
@@ -128,9 +128,14 @@ func New(o component.Options, args Arguments) (*Component, error) {
 		readers:   make(map[positions.Entry]reader),
 		stopch:    make(chan struct{}),
 	}
-	sdkInitOnce.Do(func() {
-		promSDK = InitMeter(o.Logger, ":9499")
-	})
+
+	hostname, find := os.LookupEnv("COMPUTERNAME")
+	if !find {
+		hostname, _ = os.Hostname()
+	}
+	hostIP := os.Getenv("MY_NODE_IP")
+	node_ip = hostIP
+	node_name = hostname
 	go c.CleanupExpiredInfo()
 
 	// Call to Update() to start readers and set receivers once at the start.
@@ -431,9 +436,9 @@ func (c *Component) GetPromMetric(entry loki.Entry) {
 }
 
 func (c *Component) CounterInc(serviceTag *ServiceTag, logLevel parser.Level, exceptionType string) {
-	promSDK.levelCounter.Add(context.Background(), 1, serviceTag.WithLogLevel(logLevel))
+	c.metrics.loglevel.WithLabelValues(serviceTag.FileName, serviceTag.ServiceName, logLevel.String(), node_name, node_ip).Inc()
 	if len(exceptionType) > 0 {
-		promSDK.exceptionCounter.Add(context.Background(), 1, serviceTag.WithExceptionType(exceptionType))
+		c.metrics.logexception.WithLabelValues(serviceTag.FileName, serviceTag.ServiceName, exceptionType, node_name, node_ip).Inc()
 	}
 }
 
