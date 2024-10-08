@@ -8,6 +8,7 @@ import (
 	re "github.com/NeJan2020/rabbitmq_exporter"
 	"github.com/go-kit/log"
 	"github.com/grafana/alloy/internal/static/integrations"
+	config_util "github.com/prometheus/common/config"
 )
 
 var DefaultConfig = Config{
@@ -35,27 +36,33 @@ var DefaultConfig = Config{
 }
 
 type Config struct {
-	RabbitURL                string   `yaml:"rabbit_url"`
-	RabbitUsername           string   `yaml:"rabbit_user"`
-	RabbitPassword           string   `yaml:"rabbit_pass"`
-	RabbitConnection         string   `yaml:"rabbit_connection"`
-	OutputFormat             string   `yaml:"output_format"`
-	CAFile                   string   `yaml:"ca_file"`
-	CertFile                 string   `yaml:"cert_file"`
-	KeyFile                  string   `yaml:"key_file"`
-	InsecureSkipVerify       bool     `yaml:"insecure_skip_verify"`
-	ExcludeMetrics           []string `yaml:"exlude_metrics"`
-	IncludeExchangesString   string   `yaml:"include_exchanges"`
-	SkipExchangesString      string   `yaml:"skip_exchanges"`
-	IncludeQueuesString      string   `yaml:"include_queues"`
-	SkipQueuesString         string   `yaml:"skip_queues"`
-	SkipVHostString          string   `yaml:"skip_vhost"`
-	IncludeVHostString       string   `yaml:"include_vhost"`
-	RabbitCapabilitiesString string   `yaml:"rabbit_capabilities"`
-	AlivenessVhost           string   `yaml:"aliveness_vhost"`
-	EnabledExporters         []string `yaml:"enabled_exporters"`
-	Timeout                  int      `yaml:"timeout"`
-	MaxQueues                int      `yaml:"max_queues"`
+	IncludeExporterMetrics bool `yaml:"include_exporter_metrics"`
+
+	// exporter-specific config.
+	//
+	// The exporter binary config differs to this, but these
+	// are the only fields that are relevant to the exporter struct.
+	RabbitURL                string             `yaml:"rabbit_url,omitempty"`
+	RabbitUsername           string             `yaml:"rabbit_user,omitempty"`
+	RabbitPassword           config_util.Secret `yaml:"rabbit_pass,omitempty"`
+	RabbitConnection         string             `yaml:"rabbit_connection,omitempty"`
+	OutputFormat             string             `yaml:"output_format,omitempty"`
+	CAFile                   string             `yaml:"ca_file,omitempty"`
+	CertFile                 string             `yaml:"cert_file,omitempty"`
+	KeyFile                  string             `yaml:"key_file,omitempty"`
+	InsecureSkipVerify       bool               `yaml:"insecure_skip_verify,omitempty"`
+	ExcludeMetrics           []string           `yaml:"exlude_metrics,omitempty"`
+	IncludeExchangesString   string             `yaml:"include_exchanges,omitempty"`
+	SkipExchangesString      string             `yaml:"skip_exchanges,omitempty"`
+	IncludeQueuesString      string             `yaml:"include_queues,omitempty"`
+	SkipQueuesString         string             `yaml:"skip_queues,omitempty"`
+	SkipVHostString          string             `yaml:"skip_vhost,omitempty"`
+	IncludeVHostString       string             `yaml:"include_vhost,omitempty"`
+	RabbitCapabilitiesString string             `yaml:"rabbit_capabilities,omitempty"`
+	AlivenessVhost           string             `yaml:"aliveness_vhost,omitempty"`
+	EnabledExporters         []string           `yaml:"enabled_exporters,omitempty"`
+	Timeout                  int                `yaml:"timeout,omitempty"`
+	MaxQueues                int                `yaml:"max_queues,omitempty"`
 }
 
 // UnmarshalYAML 通过重写UnmarshalYAML设置默认值
@@ -97,7 +104,7 @@ func initConfig(c *Config) (*re.RabbitExporterConfig, error) {
 	}
 
 	config.RabbitUsername = c.RabbitUsername
-	config.RabbitPassword = c.RabbitPassword
+	config.RabbitPassword = string(c.RabbitPassword)
 	config.OutputFormat = c.OutputFormat
 	config.CAFile = c.CAFile
 	config.CertFile = c.CertFile
