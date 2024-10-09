@@ -253,7 +253,7 @@ require (
 )
 
 require (
-	github.com/NeJan2020/rabbitmq_exporter v0.0.0-20241008080701-5f8513c81d16
+	github.com/NeJan2020/rabbitmq_exporter v0.0.0-20241008111853-e20867c159fd
 	github.com/coroot/logparser v0.0.0-00010101000000-000000000000
 )
 
