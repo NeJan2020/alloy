@@ -121,6 +121,7 @@ import (
 	_ "github.com/grafana/alloy/internal/component/prometheus/exporter/oracledb"             // Import prometheus.exporter.oracledb
 	_ "github.com/grafana/alloy/internal/component/prometheus/exporter/postgres"             // Import prometheus.exporter.postgres
 	_ "github.com/grafana/alloy/internal/component/prometheus/exporter/process"              // Import prometheus.exporter.process
+	_ "github.com/grafana/alloy/internal/component/prometheus/exporter/rabbitmq"             // Import prometheus.exporter.rabbitmq
 	_ "github.com/grafana/alloy/internal/component/prometheus/exporter/redis"                // Import prometheus.exporter.redis
 	_ "github.com/grafana/alloy/internal/component/prometheus/exporter/self"                 // Import prometheus.exporter.self
 	_ "github.com/grafana/alloy/internal/component/prometheus/exporter/snmp"                 // Import prometheus.exporter.snmp
