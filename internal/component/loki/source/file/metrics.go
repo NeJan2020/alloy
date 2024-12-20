@@ -17,6 +17,8 @@ type metrics struct {
 	readLines        *prometheus.CounterVec
 	encodingFailures *prometheus.CounterVec
 	filesActive      prometheus.Gauge
+	loglevel         *prometheus.CounterVec
+	logexception     *prometheus.CounterVec
 }
 
 // newMetrics creates a new set of file metrics. If reg is non-nil, the metrics
@@ -46,6 +48,16 @@ func newMetrics(reg prometheus.Registerer) *metrics {
 		Help: "Number of active files.",
 	})
 
+	m.loglevel = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "originx_logparser_level_count_total",
+		Help: "log level counter.",
+	}, []string{"path", "service_name", "level", "node_name", "node_ip"})
+
+	m.logexception = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "originx_logparser_exception_count_total",
+		Help: "log exception counter.",
+	}, []string{"path", "service_name", "exception", "node_name", "node_ip"})
+
 	if reg != nil {
 		reg.MustRegister(
 			m.readBytes,
@@ -53,6 +65,8 @@ func newMetrics(reg prometheus.Registerer) *metrics {
 			m.readLines,
 			m.encodingFailures,
 			m.filesActive,
+			m.loglevel,
+			m.logexception,
 		)
 	}
 
